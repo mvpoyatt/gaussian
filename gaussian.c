@@ -15,7 +15,7 @@
 
 
 /* Function declarations */
-int eliminate(float **matrix, int m, int n, float *b);
+int eliminate(float **matrix, int m, int n, float *b, int threadCount);
 int backwardsSub(float **matrix, int m, int n, float *x, \
 	float *b, int threadCount);
 
@@ -40,7 +40,6 @@ int main(int argc, char* argv[]){
         printf("Cannot solve uniquely.\n");
         exit(0);
     }
-    int size = m * n;
     float *matrix[m];
     float *b = malloc(sizeof(float)*m);
     float *X = malloc(sizeof(float)*n);
@@ -50,39 +49,22 @@ int main(int argc, char* argv[]){
         matrix[i] = (float *)malloc(sizeof(float)*n);
     }
     // Parse vector A into matrix and b into b
-    // and print them
     for(i = 0; i < m; i++){
         for(j = 0; j < n; j++){
             fscanf(input, "%d", &temp);
             matrix[i][j] = (float)temp;
-            if(j % n == 0){ printf("\n"); }
-            printf("%d ", temp);
         }
     }
-    printf("\nb is: ");
     for(i = 0; i < m; i++){
         fscanf(input, "%d", &temp);
         b[i] = (float)temp;
-	printf("%f\t", b[i]);
     }
 
     // Perform the Gaussian Elimination
-    int ret = eliminate(matrix, m, n, b);
-
-    // Debugging output
-    /*
-    printf("\nNEW MATRIX:\n");
-    for(i = 0; i < m; i++){
-        for(j = 0; j < n; j++){
-            if(j % n == 0){ printf("\n"); }
-            printf("%f\t", matrix[i][j]);
-        }
-    }
-    */
+    eliminate(matrix, m, n, b, threadCount);
 
 	// Perform the backwards substitution in parallel
-	int backret = backwardsSub(matrix, m, n, X, b, threadCount);
-    	printf("\nX matrix solves to:\n");
+	backwardsSub(matrix, m, n, X, b, threadCount);
 	for(i = 0; i < n; i++){
             printf("x%d = %f\t", i, X[i]);
     }
@@ -95,44 +77,30 @@ int main(int argc, char* argv[]){
 // matrix is the 2d array to represent A
 // m is the rows of matrix and n the columns
 // b is the vector representing b
-int eliminate(float **matrix, int m, int n, float *b){
+int eliminate(float **matrix, int m, int n, float *b, int threadCount){
     int r, c, k, i, index;
     float ratio;
     for(c = 0; c < n - 1; c++){
         index = c;
+        #pragma omp parallel for num_threads(threadCount)
         for(r = (c + 1); r < m; r++){
             // Find a non-zero entry to divide by
-            if(matrix[index][c] == 0){
-                for(i = 0; i < m; i++){
-                    if(matrix[i][c] != 0){
+            if((matrix[index][c] == 0) || (index == r)){
+                for(i = (m-1); i >= 0; i--){
+                    if((matrix[i][c] != 0) && (i != r)){
                         index = i;
                         break;
                     }
                 }
             }
-	    // Eliminate x^c in row r by subtracting another row's
-	    // corresponding element times the ratio for each element in r
+	        // Eliminate x^c in row r by subtracting another row's
+	        // corresponding element times the ratio for each element in r
             ratio = matrix[r][c] / matrix[index][c];
-            for(k = c; k < n; k++){
+            for(k = 0; k < n; k++){
                 matrix[r][k] = matrix[r][k] - (ratio * matrix[index][k]);
-	    }
-	    b[r] = b[r] - (ratio * b[index]);
-        }
-	// Debugging print statements
-        /*
-	int i, j;
-        for(i = 0; i < m; i++){
-            for(j = 0; j < n; j++){
-                if(j % n == 0){ printf("\n"); }
-                printf("%f\t", matrix[i][j]);
             }
+            b[r] = b[r] - (ratio * b[index]);
         }
-        printf("\n");
-    	for(i = 0; i < m; i++){
-		printf("%f\t", b[i]);
-	}
-	printf("\n");
-	*/
 	}
     return 1;
 }
@@ -145,12 +113,13 @@ int eliminate(float **matrix, int m, int n, float *b){
 // x is the vector representing x which we are solving for
 // b is the vector representing b in the equation
 // threadCount is the number of thread we will divide work amoung
-int backwardsSub(float **matrix, int m, int n, float *x, \
-float *b, int threadCount){
+int backwardsSub(float **matrix, int m, int n, float *x, float *b, int threadCount){
 	int r, c;
 	float temp;
-	#pragma omp parallel num_threads(threadCount) default(none) \
-		private(r, c) shared(matrix, x, b, temp)
+
+    #pragma omp parallel num_threads(threadCount) default(none) \
+        private(r,c) shared(matrix, x, b, m, n, temp)
+
 	for(r = m - 1; r >= 0 ; r--){
 		#pragma omp single
 		temp = b[r];
@@ -164,7 +133,3 @@ float *b, int threadCount){
 	}
 	return 1;
 }	
-
-
-
-
